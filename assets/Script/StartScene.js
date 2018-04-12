@@ -46,7 +46,7 @@ cc.Class({
 
     startBtnOnClick:function () {
         this.label.string = "点击开始"
-        
+        cc.director.loadScene("MainScene",null);
     }
 
     // update (dt) {},
