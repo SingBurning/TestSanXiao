@@ -20,6 +20,11 @@ cc.Class({
             type: cc.Node,
         },
 
+        audioSource: {
+            default: null,
+            type: cc.AudioSource,
+        }
+
     },
 
     reward: 0,
@@ -28,11 +33,13 @@ cc.Class({
     pSet: null,
     stars: null,
     mask: null,
+    isRoll:false,
 
     onLoad () {
         this.buildCoordinateSet();
         this.init();
         this.touch();
+        // this.audioSource.play();
     },
 
     start () {
@@ -78,7 +85,7 @@ cc.Class({
                 let position = cc.v2(this.beginX + i*(eleSize.width + this.SpacingX), this.beginY + j*(eleSize.height + this.SpacingY));
                 arr.push(position);
             }
-            //将每列生成的格子位置放入数组
+            //将每行生成的格子位置放入数组
             this.pSet.push(arr);
         }
     },
@@ -94,6 +101,9 @@ cc.Class({
     //touch 事件
     touch:function () {
         this.node.on("touchstart", function (event) {
+            if (this.isRoll) {
+                return
+            }
             let p = this.node.convertToNodeSpace(event.getLocation());
             this.p1 = this.positionToPos(p.x, p.y);
             if (this.p1.x < 0 || this.p1.x > this.Row - 1 || this.p1.y < 0 || this.p1.y > this.Col - 1) {
@@ -102,14 +112,20 @@ cc.Class({
 
             this.cell1 = this.stars[this.p1.x][this.p1.y];
             this.cur = this.pSet[this.p1.x][this.p1.y];
+            console.log("x:"+this.cell1.x+"  y:"+this.cell1.y);
+            console.log("pSetx:"+this.cur.x+"  pSety:"+this.cur.y);
             this.cell1.select = true;
             this.cell1.zIndex = 1;
         },this);
 
         this.node.on("touchmove", function (event) {
+            if (this.cell1 == null || this.isRoll) {
+                return;
+            }
             if (this.cell1.select) {
                 let x = event.getLocationX();
                 let y = event.getLocationY();
+                //判断当前移动到的位置，是否在开始位置的左右一个格子位置内
                 if (x >= (this.cur.x - this.eleSize.width - this.SpacingX) && x <= (this.cur.x + this.eleSize.width + this.SpacingX)
              && y <= (this.cur.y + this.eleSize.height + this.SpacingY) && y >= (this.cur.y - this.eleSize.height - this.SpacingY)) 
                 {
@@ -119,10 +135,15 @@ cc.Class({
         },this);
 
         this.node.on("touchend", function (event) {
+            if (this.cur == null || this.isRoll) {
+                return
+            }
+            this.isRoll = true;
             let p = this.node.convertToNodeSpace(event.getLocation());
             this.p2 = this.positionToPos(p.x, p.y);
             if (this.p2.x < 0 || this.p2.x > this.Row - 1 || this.p2.y < 0 || this.p2.y > this.Col - 1) {
                 this.cell1.setPosition(this.cur);
+                this.isRoll = false
                 return
             }
 
@@ -138,6 +159,7 @@ cc.Class({
                 }
             }else{
                 this.cell1.setPosition(this.cur);
+                this.isRoll = false
             }
         },this)
     },
@@ -207,22 +229,27 @@ cc.Class({
 
     //下落动画 更新位置
     dropAndUpdate:function () {
+        let self = this
         let finished = cc.callFunc(function (target) {
             this.check();
         }, this);
-
+        let act;
         for (let i = 0; i < this.stars.length; i++) {
             for (let j = 0; j < this.stars[i].length; j++) {
                 if (i == this.stars.length - 1 && j == this.stars[i].length - 1) {
-                    let act = cc.sequence(cc.moveTo(1, this.pSet[i][j]), finished);
+                    act = cc.sequence(cc.delayTime(0.3),cc.moveTo(0.5, this.pSet[i][j]),cc.delayTime(0.5), finished);
                 }else{
-                    let act = cc.moveTo(1, this.pSet[i][j]);
+                    act = cc.sequence(cc.delayTime(0.3),cc.moveTo(0.5, this.pSet[i][j]),cc.delayTime(0.5), cc.callFunc(function () {
+                        self.isRoll = false
+                    }));
                 }
+                self.isRoll = true
                 this.stars[i][j].runAction(act);
                 let com = this.stars[i][j].getComponent("Star");
                 com.pos = cc.v2(i,j);
             }
         }
+        
     },
 
     checkConnected:function () {
@@ -275,7 +302,60 @@ cc.Class({
         return count;
     },
 
+    //检查横向相连的格子
     horizontalCheckConnected:function () {
-        
+        let index1, index2;
+        let start, end;
+        let count = 0;
+        for (let j = 0; j < this.Col; j++) {
+            for (let i = 0; i < this.Row;) {
+                if (typeof(this.stars[i][j]) == "undefined") {
+                    i++;
+                    continue;
+                }
+                index1 = this.stars[i][j].getComponent("Star").sfIndex;
+                let begin = i;
+                end = begin;
+                while (end < this.Row) {
+                    if (typeof(this.stars[end][j]) == "undefined") {
+                        if (end - begin >= 3) {
+                            while (begin != end) {
+                                if (this.mask[begin][j] != 1) {
+                                    this.mask[begin][j] = 1;
+                                    count++;
+                                }
+                                begin++;
+                            }
+                        }
+                        break;
+                    }
+                    index2 = this.stars[end][j].getComponent("Star").sfIndex;
+                    if (index1 != index2) {
+                        if (end - begin >= 3) {
+                            while (begin != end) {
+                                if (this.mask[begin][j] != 1) {
+                                    this.mask[begin][j] = 1;
+                                    count++;
+                                }
+                                begin++;
+                            }
+                        }
+                        break;
+                    }
+                    end++;
+                }
+                if (end == this.Row && end - begin >= 3) {
+                    while (begin != end) {
+                        if (this.mask[begin][j] != 1) {
+                            this.mask[begin][j] = 1;
+                            count++;
+                        }
+                        begin++;
+                    }
+                }
+                i = end;
+            }
+        }
+        return count;
     },
 });
